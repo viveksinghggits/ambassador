@@ -18,8 +18,8 @@
 
 # This argument controls the base image that is used for the release
 # containers.
-ARG base="docker.io/frolvlad/alpine-glibc:alpine-3.12_glibc-2.32"
-
+#ARG base="docker.io/frolvlad/alpine-glibc:alpine-3.12_glibc-2.32"
+ARG base="registry.access.redhat.com/ubi8/ubi-minimal:8.1"
 # This argument sets the base image for the build container image. This
 # base image contains only third-party code.
 ARG builderbase="i-forgot-to-set-build-arg-builderbase"
@@ -74,12 +74,25 @@ FROM ${artifacts} as artifacts
 
 FROM ${base} as ambassador
 
+RUN mkdir -p /licenses && \
+    echo "AL v2.0" > LICENSE && \
+    mv LICENSE /licenses
+
+RUN microdnf update && microdnf install shadow-utils httpd-tools
 # Always have an "ambassador" user as UID 8888. This is what we recommend
 # people run as. (Note that the "-D" actually leaves the password locked.)
-RUN adduser ambassador -u 8888 -G root -D -H -s /bin/false
+RUN useradd ambassador -u 8888 -G root
+# -D -H -s /bin/false
+RUN microdnf remove shadow-utils && \
+  microdnf clean all
 
 # External stuff that should change infrequently
-RUN apk --no-cache add bash curl python3 libcap htop
+# RUN apk --no-cache add bash curl python3 libcap htop
+RUN microdnf -y update && \
+    microdnf install -y \
+    bash \
+    python3
+
 RUN ln -s /usr/bin/python3 /usr/bin/python
 COPY --from=artifacts /usr/bin/kubectl /usr/bin/kubectl
 COPY --from=artifacts /usr/lib/libyaml* /usr/lib/
@@ -112,6 +125,13 @@ COPY --from=artifacts /ambassador /ambassador
 COPY --from=artifacts /buildroot/ambassador/demo/config /ambassador/ambassador-demo-config
 COPY --from=artifacts /buildroot/ambassador/demo/services /ambassador/demo-services
 COPY --from=artifacts /buildroot/ambassador/docs/yaml/ambassador/ambassador-crds.yaml /opt/ambassador/etc/crds.yaml
+
+LABEL name="value" \
+        release="release" \
+        version="version" \
+        summary="summary" \
+        description="description" \
+        vendor="version"
 
 # Fix permissions to allow correctly running as a non root user
 # XXX: We could combine everything into one tree in the builder, fix permissions
